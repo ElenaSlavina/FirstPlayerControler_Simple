@@ -4,6 +4,11 @@ using UnityEngine;
 
 public class FirstPersonController : MonoBehaviour
 {
+    // This implementation of the slope controller behavior has problems, so it is not recommended to use it in a real project.
+    // Problem 1: If the slope angle is quite large (approximately 80 degrees), then sliding does not work.
+    // Problem 2: The character does not slide all the way to the bottom of the slope.
+    // Problem 3: If you constantly jump, then you can reach the top of the slope with small jumps.
+
     public bool CanMove { get; private set; } = true;
     private bool IsSprinting => canSprint && Input.GetKey(sprintKey);
     private bool ShouldJump => Input.GetKey(jumpKey) && characterController.isGrounded;
@@ -14,6 +19,7 @@ public class FirstPersonController : MonoBehaviour
     [SerializeField] private bool canJump = true;
     [SerializeField] private bool canCrouch = true;
     [SerializeField] private bool canUseHeadbob = true;
+    [SerializeField] private bool willSlideOnSlops = true;
 
     [Header("Controls")]
     [SerializeField] private KeyCode sprintKey = KeyCode.LeftShift;
@@ -24,6 +30,7 @@ public class FirstPersonController : MonoBehaviour
     [SerializeField] private float walkSpeed = 3.0f;
     [SerializeField] private float sprintSpeed = 6.0f;
     [SerializeField] private float crouchingSpeed = 1.5f;
+    [SerializeField] private float slopeSpeed = 8f;
 
     [Header("Look Parameters")]
     [SerializeField, Range(1, 10)] private float lookSpeedX = 2.0f;
@@ -53,6 +60,22 @@ public class FirstPersonController : MonoBehaviour
     [SerializeField] private float crouchBobAmount = 0.025f;
     private float defaultYPos = 0;
     private float timer;
+
+    // Sliding Parameters
+    private Vector3 hitPointNormal;
+    private bool IsSliding
+    {
+        get
+        {
+            if (characterController.isGrounded && Physics.Raycast(transform.position, Vector3.down, out RaycastHit slopeHit, 2f))
+            {
+                hitPointNormal = slopeHit.normal;
+                return Vector3.Angle(hitPointNormal, Vector3.up) > characterController.slopeLimit;
+            }
+
+            return false;
+        }
+    }
 
     [Header("Statistics")]
     private int jumpsAmount = 0;
@@ -175,6 +198,10 @@ public class FirstPersonController : MonoBehaviour
     {
         if (!characterController.isGrounded)
             moveDirection.y -= gravity * Time.deltaTime;
+
+        // This implementation of the slope controller behavior has problems
+        if (willSlideOnSlops && IsSliding)
+            moveDirection += new Vector3(hitPointNormal.x, -hitPointNormal.y, hitPointNormal.z) * slopeSpeed;
 
         characterController.Move(moveDirection * Time.deltaTime);
     }
