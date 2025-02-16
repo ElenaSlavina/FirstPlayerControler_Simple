@@ -21,11 +21,13 @@ public class FirstPersonController : MonoBehaviour
     [SerializeField] private bool canUseHeadbob = true;
     [SerializeField] private bool willSlideOnSlops = true;
     [SerializeField] private bool canZoom = true;
+    [SerializeField] private bool canInteract = true;
 
     [Header("Controls")]
     [SerializeField] private KeyCode sprintKey = KeyCode.LeftShift;
     [SerializeField] private KeyCode jumpKey = KeyCode.Space;
     [SerializeField] private KeyCode crouchKey = KeyCode.C;
+    [SerializeField] private KeyCode interactKey = KeyCode.Mouse0;
     [SerializeField] private KeyCode zoomKey = KeyCode.Mouse1;
 
     [Header("Movement Parameters")]
@@ -68,6 +70,14 @@ public class FirstPersonController : MonoBehaviour
     [SerializeField] private float zoomFOV = 30f;
     private float defaultFOV;
     private Coroutine zoomRoutine;
+
+    [Header("Interaction")]
+    [SerializeField] private Vector3 interactionRayPoint = new Vector3(0.5f, 0.5f, 0);
+    [SerializeField] private float interactionDistance = 2;
+    [SerializeField] private int interactionLayerIndex = 9;
+    [SerializeField] private LayerMask interactionlayer = default;
+    private Interactable currentInteractable;
+
 
     // Sliding Parameters
     private Vector3 hitPointNormal;
@@ -122,7 +132,43 @@ public class FirstPersonController : MonoBehaviour
             if (canZoom)
                 HandleZoom();
 
+            if (canInteract)
+            {
+                HandleInteractionCheck();
+                HandleInteractionInput();
+            }
+
             ApplyFinalMovements();
+        }
+    }
+
+    private void HandleInteractionInput()
+    {
+        if (Input.GetKeyDown(interactKey) && currentInteractable != null &&
+            Physics.Raycast(playerCamera.ViewportPointToRay(interactionRayPoint), out RaycastHit hit, interactionDistance, interactionlayer))
+        {
+            currentInteractable.OnInteract();
+
+        }
+    }
+
+    private void HandleInteractionCheck()
+    {
+        if (Physics.Raycast(playerCamera.ViewportPointToRay(interactionRayPoint), out RaycastHit hit, interactionDistance))
+        {
+            if (hit.collider.gameObject.layer == interactionLayerIndex &&
+                (currentInteractable == null || hit.collider.gameObject.GetInstanceID() != currentInteractable.GetInstanceID()))
+            {
+                hit.collider.TryGetComponent(out currentInteractable);
+
+                if (currentInteractable)
+                    currentInteractable.OnFocus();
+            }
+            else if (currentInteractable)
+            {
+                currentInteractable.OnLoseFocus();
+                currentInteractable = null;
+            }
         }
     }
 
