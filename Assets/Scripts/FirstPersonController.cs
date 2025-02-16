@@ -20,11 +20,13 @@ public class FirstPersonController : MonoBehaviour
     [SerializeField] private bool canCrouch = true;
     [SerializeField] private bool canUseHeadbob = true;
     [SerializeField] private bool willSlideOnSlops = true;
+    [SerializeField] private bool canZoom = true;
 
     [Header("Controls")]
     [SerializeField] private KeyCode sprintKey = KeyCode.LeftShift;
     [SerializeField] private KeyCode jumpKey = KeyCode.Space;
     [SerializeField] private KeyCode crouchKey = KeyCode.C;
+    [SerializeField] private KeyCode zoomKey = KeyCode.Mouse1;
 
     [Header("Movement Parameters")]
     [SerializeField] private float walkSpeed = 3.0f;
@@ -61,6 +63,12 @@ public class FirstPersonController : MonoBehaviour
     private float defaultYPos = 0;
     private float timer;
 
+    [Header("Zoom Parameters")]
+    [SerializeField] private float timeToZoom = 0.3f;
+    [SerializeField] private float zoomFOV = 30f;
+    private float defaultFOV;
+    private Coroutine zoomRoutine;
+
     // Sliding Parameters
     private Vector3 hitPointNormal;
     private bool IsSliding
@@ -77,9 +85,6 @@ public class FirstPersonController : MonoBehaviour
         }
     }
 
-    [Header("Statistics")]
-    private int jumpsAmount = 0;
-
     private Camera playerCamera;
     private CharacterController characterController;
 
@@ -93,6 +98,7 @@ public class FirstPersonController : MonoBehaviour
         playerCamera = GetComponentInChildren<Camera>();
         characterController = GetComponent<CharacterController>();
         defaultYPos = playerCamera.transform.localPosition.y;
+        defaultFOV = playerCamera.fieldOfView;
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
@@ -113,7 +119,35 @@ public class FirstPersonController : MonoBehaviour
             if (canUseHeadbob)
                 HandleHeadbob();
 
+            if (canZoom)
+                HandleZoom();
+
             ApplyFinalMovements();
+        }
+    }
+
+    private void HandleZoom()
+    {
+        if (Input.GetKeyDown(zoomKey))
+        {
+            if (zoomRoutine != null)
+            {
+                StopCoroutine(zoomRoutine);
+                zoomRoutine = null;
+            }
+
+            zoomRoutine = StartCoroutine(ToggleZoom(true));
+        }
+
+        if (Input.GetKeyUp(zoomKey))
+        {
+            if (zoomRoutine != null)
+            {
+                StopCoroutine(zoomRoutine);
+                zoomRoutine = null;
+            }
+
+            zoomRoutine = StartCoroutine(ToggleZoom(false));
         }
     }
 
@@ -135,6 +169,45 @@ public class FirstPersonController : MonoBehaviour
     {
         if (ShouldCrouch)
             StartCoroutine(CrouchStand());
+    }
+
+    private void HandleJump()
+    {
+        if (ShouldJump)
+        {
+            moveDirection.y = jumpForce;
+        }
+    }
+
+    private void HandleMovementInput()
+    {
+        currentInput = new Vector2((isCrouching ? crouchingSpeed : IsSprinting ? sprintSpeed : walkSpeed) * Input.GetAxis("Vertical"),
+            (isCrouching ? crouchingSpeed : IsSprinting ? sprintSpeed : walkSpeed) * Input.GetAxis("Horizontal"));
+
+        float moveDirectionY = moveDirection.y;
+
+        moveDirection = (transform.TransformDirection(Vector3.forward) * currentInput.x) + (transform.TransformDirection(Vector3.right) * currentInput.y);
+        moveDirection.y = moveDirectionY;
+    }
+
+    private void HandleMouseLook()
+    {
+        rotationX -= Input.GetAxis("Mouse Y") * lookSpeedY;
+        rotationX = Mathf.Clamp(rotationX, -upperLookLimit, lowerLookLimit);
+        playerCamera.transform.localRotation = Quaternion.Euler(rotationX, 0, 0);
+        transform.rotation *= Quaternion.Euler(0, Input.GetAxis("Mouse X") * lookSpeedX, 0);
+    }
+
+    private void ApplyFinalMovements()
+    {
+        if (!characterController.isGrounded)
+            moveDirection.y -= gravity * Time.deltaTime;
+
+        // This implementation of the slope controller behavior has problems
+        if (willSlideOnSlops && IsSliding)
+            moveDirection += new Vector3(hitPointNormal.x, -hitPointNormal.y, hitPointNormal.z) * slopeSpeed;
+
+        characterController.Move(moveDirection * Time.deltaTime);
     }
 
     private IEnumerator CrouchStand()
@@ -165,44 +238,20 @@ public class FirstPersonController : MonoBehaviour
         duringCrouchAnimation = false;
     }
 
-    private void HandleJump()
+    private IEnumerator ToggleZoom(bool isEnter)
     {
-        if (ShouldJump)
+        float targetFOV = isEnter ? zoomFOV : defaultFOV;
+        float startingFOV = playerCamera.fieldOfView;
+        float timeElapsed = 0;
+
+        while (timeElapsed < timeToZoom)
         {
-            jumpsAmount++;
-            moveDirection.y = jumpForce;
-
-            Debug.Log($"jumpsAmount = {jumpsAmount}");
+            playerCamera.fieldOfView = Mathf.Lerp(startingFOV, targetFOV, timeElapsed / timeToZoom);
+            timeElapsed += Time.deltaTime;
+            yield return null;
         }
-    }
 
-    private void HandleMovementInput()
-    {
-        currentInput = new Vector2((isCrouching ? crouchingSpeed : IsSprinting ? sprintSpeed : walkSpeed) * Input.GetAxis("Vertical"),
-            (isCrouching ? crouchingSpeed : IsSprinting ? sprintSpeed : walkSpeed) * Input.GetAxis("Horizontal"));
-
-        float moveDirectionY = moveDirection.y;
-
-        moveDirection = (transform.TransformDirection(Vector3.forward) * currentInput.x) + (transform.TransformDirection(Vector3.right) * currentInput.y);
-        moveDirection.y = moveDirectionY;
-    }
-
-    private void HandleMouseLook()
-    {
-        rotationX -= Input.GetAxis("Mouse Y") * lookSpeedY;
-        rotationX = Mathf.Clamp(rotationX, -upperLookLimit, lowerLookLimit);
-        playerCamera.transform.localRotation = Quaternion.Euler(rotationX, 0, 0);
-        transform.rotation *= Quaternion.Euler(0, Input.GetAxis("Mouse X") * lookSpeedX, 0);
-    }
-    private void ApplyFinalMovements()
-    {
-        if (!characterController.isGrounded)
-            moveDirection.y -= gravity * Time.deltaTime;
-
-        // This implementation of the slope controller behavior has problems
-        if (willSlideOnSlops && IsSliding)
-            moveDirection += new Vector3(hitPointNormal.x, -hitPointNormal.y, hitPointNormal.z) * slopeSpeed;
-
-        characterController.Move(moveDirection * Time.deltaTime);
+        playerCamera.fieldOfView = targetFOV;
+        zoomRoutine = null;
     }
 }
